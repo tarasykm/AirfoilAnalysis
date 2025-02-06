@@ -1,13 +1,10 @@
 import aerosandbox as asb
 import aerosandbox.numpy as np
 import pandas as pd
-from run_xfoil import *
 import os
-from alive_progress import alive_bar, animations
 from aerosandbox.aerodynamics.aero_2D.xfoil import XFoil
 import matplotlib.pyplot as plt
 
-custom = animations.bar_factory(chars='==', tip='☁️✈️', background='⠈⠐⠠⢀⡀⠄⠂⠁', borders = ('🛫→', '←🛬'), errors='💥')
 
 def CL_range(design_CLs, num_points):
     """
@@ -35,6 +32,22 @@ def weighted_average(data, weights):
     return weighted / sum(weights)
 
 class AirfoilAnalysis(asb.Airfoil):
+    """Class to analyze an airfoil using NeuralFoil or XFOIL. 
+    
+    Parameters:
+    airfoil: str
+        Name of the airfoil to analyze.
+    cls: list
+        List of CL values to analyze.
+    reynolds: list
+        List of Reynolds numbers to analyze.
+    CLweights: list, optional
+        List of weights for each CL value. Used for scoring.
+    mass: bool, optional.
+        If True, airfoil mass is considered in scoring.
+    custom_weights: list, optional
+        List of custom weights for scoring. Default is [20, 0, 3, 0.2, 5, 5].
+    """
     def __init__(self, airfoil, cls, reynolds, CLweights=None, mass=True, custom_weights=None):
         self.airfoil = asb.Airfoil(airfoil)
         self.cls = cls
@@ -44,9 +57,9 @@ class AirfoilAnalysis(asb.Airfoil):
         self.xtr_top = []
         self.xtr_bot = []
         self.maxCL = None
-        self.score = 0
-        self.failed=False
-        self.mass = mass
+        self.score = 0 
+        self.failed=False # True if the airfoil analysis failed
+        self.mass = mass # True if airfoil mass is to be considered in scoring
         self.failure_reason = []
         if CLweights is not None:
             self.CLweights = CLweights
@@ -78,6 +91,11 @@ class AirfoilAnalysis(asb.Airfoil):
 
 
     def run_nf(self, min_confidence=0.9):
+        """Run NeuralFoil on the airfoil for the given CL values and Reynolds numbers.
+        Parameters:
+        min_confidence: float, optional
+            Minimum confidence value for NeuralFoil analysis. Default is 0.9.
+        """
         for re in self.reynolds:
             opti = asb.Opti()
             alpha = opti.variable(init_guess=2, scale=0.1, n_vars=len(self.cls))
@@ -104,6 +122,7 @@ class AirfoilAnalysis(asb.Airfoil):
                 self.failure_reason.append('NF_solve')
 
     def run_nf_cl(self, cl):
+        """Run NeuralFoil on the airfoil for the given CL values and Reynolds numbers."""
         opti = asb.Opti()
         alpha = opti.variable(init_guess=2, scale=0.1, n_vars=len(cl))
         nf = self.airfoil.get_aero_from_neuralfoil(
@@ -116,6 +135,14 @@ class AirfoilAnalysis(asb.Airfoil):
         return nf
     
     def nf_maxCL(self, reynolds=None, min_confidence=0.9):
+        """Find the maximum CL for the airfoil using NeuralFoil.
+
+        Parameters:
+        reynolds: float, optional
+            Reynolds number to analyze. Default is the first value in the reynolds list.
+        min_confidence: float, optional
+            Minimum confidence value for NeuralFoil analysis. Default is 0.9.
+        """
         if reynolds is None:
             reynolds = self.reynolds[0]
         opti = asb.Opti()
@@ -137,8 +164,16 @@ class AirfoilAnalysis(asb.Airfoil):
         # return nf['CL']
 
     
-    def score_result(self, weights):
+    def score_result(self, weights=None):
+        """Score the airfoil based on the analysis results.
+
+        Parameters:
+        weights: list, optional
+            List of weights for scoring the airfoil.
+        """
         w1, w2, w3, w4, w5, w6 = self.custom_weights
+        if weights is None:
+            weights = self.CLweights
         score = 0
         for i in range(len(self.cls)):
             cds = self.cds[i]
@@ -157,9 +192,41 @@ class AirfoilAnalysis(asb.Airfoil):
         self.score = float(score)
 
 class BatchAirfoil():
-    def __init__(self, airfoil_path, cls, reynolds, min_thick=0.08, nf=True, maxCL=True, CLweights=None, weight=True, takeoff_reynolds = 250000):
+    def __init__(self, airfoil_path, cls, reynolds, min_thick=0.0, nf=True, maxCL=True, CLweights=None, weight=True, takeoff_reynolds = 250000, min_confidece=0.9, alivebar=False):
+        """Class to analyze a batch of airfoils using NeuralFoil or XFOIL.
+
+        Parameters:
+        airfoil_path: str or list
+            Path to the folder containing airfoil files, or a list of airfoil files.
+        cls: list
+            List of CL values to analyze.
+        reynolds: list
+            List of Reynolds numbers to analyze.
+        min_thick: float, optional
+            Minimum thickness of the airfoil. Default is 0.
+        nf: bool, optional
+            If True, NeuralFoil is used for analysis. Default is True.
+        maxCL: bool, optional
+            If True, the maximum CL value is found. Default is True.
+        CLweights: list, optional
+            List of weights for each CL value. Used for scoring.
+        weight: bool, optional
+            If True, airfoil mass is considered in scoring. Default is True.
+        takeoff_reynolds: float, optional
+            Reynolds number for takeoff. Default is 250000.
+        min_confidence: float, optional
+            Minimum confidence value for NeuralFoil analysis. Default is 0.9.
+        alivebar: bool, optional
+            Display a loading bar. Default is False.
+
+            I'm a sucker for loading bars. This one I designed just for you! 
+            However... if you don't want one, you can disable it.
+        """
         if isinstance(airfoil_path, str):
-            self.airfoil_files = [f for f in os.listdir(airfoil_path) if f.endswith('.dat')]
+            try:
+                self.airfoil_files = [f for f in os.listdir(airfoil_path) if f.endswith('.dat')]
+            except Exception as e:
+                raise Exception(f"Failed to load airfoils from {airfoil_path}: {e}")
         elif isinstance(airfoil_path, list):
             self.airfoil_files = airfoil_path
         self.cls = cls
@@ -169,6 +236,7 @@ class BatchAirfoil():
         self.maxCL = maxCL
         self.weight = weight
         self.takeoff_reynolds = takeoff_reynolds
+        self.min_confidence = min_confidece
         if CLweights is None:
             self.CLweights = [1]*len(cls)
 
@@ -178,82 +246,159 @@ class BatchAirfoil():
         ])
 
     def run_batch(self):
+        """Run the batch analysis on the airfoils."""
         failed = []
         num_failed = 0
+        # def run():
+        if self.alivebar:
+            from alive_progress import alive_bar, animations
+            custom = animations.bar_factory(chars='==', tip='☁️✈️', background='⠈⠐⠠⢀⡀⠄⠂⠁', borders = ('🛫→', '←🛬'), errors='💥')
+            with alive_bar(len(self.airfoil_files), title="Analyzing airfoils...", bar=custom) as bari:
+                for airfoil_file in self.airfoil_files:
+                    try:
+                        airfoil = AirfoilAnalysis(airfoil_file, self.cls, self.reynolds)
+                    except Exception as e:
+                        print(f"Failed to load airfoil {airfoil_file}: {e}")
+                        num_failed += 1
+                        failed.append(airfoil_file)
+                        continue
 
-        with alive_bar(len(self.airfoil_files), title="Analyzing airfoils...", bar=custom) as bari:
-            for airfoil_file in self.airfoil_files:
-                try:
-                    airfoil = AirfoilAnalysis(airfoil_file, self.cls, self.reynolds)
-                except Exception as e:
-                    print(f"Failed to load airfoil {airfoil_file}: {e}")
-                    num_failed += 1
-                    failed.append(airfoil_file)
-                    continue
-
-                # Check thickness
-                try:
-                    if airfoil.airfoil.max_thickness() < self.min_thick:
-                        print(f"Airfoil {airfoil.airfoil.name} is too thin")
-                        airfoil.failure_reason.append("Thin")
+                    # Check thickness
+                    try:
+                        if airfoil.airfoil.max_thickness() < self.min_thick:
+                            print(f"Airfoil {airfoil.airfoil.name} is too thin")
+                            airfoil.failure_reason.append("Thin")
+                            bari()
+                            continue
+                    except:
+                        print(f"Failed to load airfoil {airfoil.airfoil.name}")
+                        num_failed += 1
+                        failed.append(airfoil.airfoil.name)
                         bari()
                         continue
-                except:
-                    print(f"Failed to load airfoil {airfoil.airfoil.name}")
-                    num_failed += 1
-                    failed.append(airfoil.airfoil.name)
+
+                    # Run NeuralFoil or XFOIL
+                    if self.nf:
+                        airfoil.run_nf()
+                        if airfoil.failed:
+                            print(f"Failed to run NeuralFoil for airfoil {airfoil.airfoil.name}")
+                            num_failed += 1
+                            failed.append(airfoil.airfoil.name)
+                            bari()
+                            continue
+                    else:
+                        airfoil.run_xfoil()
+                        if airfoil.failed:
+                            print(f"Failed to run XFOIL for airfoil {airfoil.airfoil.name}")
+                            num_failed += 1
+                            failed.append(airfoil.airfoil.name)
+                            bari()
+                            continue
+
+                    # Find CLmax if required
+                    if self.maxCL:
+                        airfoil.nf_maxCL(reynolds=self.takeoff_reynolds)
+                        if airfoil.failed:
+                            print(f"Failed to find max CL for airfoil {airfoil.airfoil.name}")
+                            num_failed += 1
+                            failed.append(airfoil.airfoil.name)
+                            bari()
+                            continue
+
+                    # Score the airfoil
+                    airfoil.score_result(weights=self.CLweights)
+
+                    # Store results in DataFrame
+                    self.results_df.loc[airfoil.airfoil.name] = {
+                        "Name": airfoil.airfoil.name,
+                        "Airfoil_Object": airfoil.airfoil,  # Storing asb.Airfoil object
+                        "CLs": airfoil.cls,
+                        "CDs": airfoil.cds,
+                        "CMs": airfoil.cms,
+                        "Xtr_Top": airfoil.xtr_top,
+                        "Xtr_Bot": airfoil.xtr_bot,
+                        "CLmax": airfoil.maxCL,
+                        "Score": airfoil.score,
+                        "Failure_Reason": "; ".join(airfoil.failure_reason) if airfoil.failure_reason else "None"
+                    }
+
+                    print(f"Airfoil {airfoil.airfoil.name} analyzed successfully!")
                     bari()
-                    continue
+            self.results_df = self.results_df.sort_values(by="Score", ascending=False)
+            print(f"Failed to analyze {num_failed} airfoils out of {len(self.airfoil_files)} ({num_failed / len(self.airfoil_files) * 100:.2f}%)")
+        else:
+            for airfoil_file in self.airfoil_files:
+                    try:
+                        airfoil = AirfoilAnalysis(airfoil_file, self.cls, self.reynolds)
+                    except Exception as e:
+                        print(f"Failed to load airfoil {airfoil_file}: {e}")
+                        num_failed += 1
+                        failed.append(airfoil_file)
+                        continue
 
-                # Run NeuralFoil or XFOIL
-                if self.nf:
-                    airfoil.run_nf()
-                    if airfoil.failed:
-                        print(f"Failed to run NeuralFoil for airfoil {airfoil.airfoil.name}")
+                    # Check thickness
+                    try:
+                        if airfoil.airfoil.max_thickness() < self.min_thick:
+                            print(f"Airfoil {airfoil.airfoil.name} is too thin")
+                            airfoil.failure_reason.append("Thin")
+                            bari()
+                            continue
+                    except:
+                        print(f"Failed to load airfoil {airfoil.airfoil.name}")
                         num_failed += 1
                         failed.append(airfoil.airfoil.name)
                         bari()
                         continue
-                else:
-                    airfoil.run_xfoil()
-                    if airfoil.failed:
-                        print(f"Failed to run XFOIL for airfoil {airfoil.airfoil.name}")
-                        num_failed += 1
-                        failed.append(airfoil.airfoil.name)
-                        bari()
-                        continue
 
-                # Find CLmax if required
-                if self.maxCL:
-                    airfoil.nf_maxCL(reynolds=self.takeoff_reynolds)
-                    if airfoil.failed:
-                        print(f"Failed to find max CL for airfoil {airfoil.airfoil.name}")
-                        num_failed += 1
-                        failed.append(airfoil.airfoil.name)
-                        bari()
-                        continue
+                    # Run NeuralFoil or XFOIL
+                    if self.nf:
+                        airfoil.run_nf()
+                        if airfoil.failed:
+                            print(f"Failed to run NeuralFoil for airfoil {airfoil.airfoil.name}")
+                            num_failed += 1
+                            failed.append(airfoil.airfoil.name)
+                            bari()
+                            continue
+                    else:
+                        airfoil.run_xfoil()
+                        if airfoil.failed:
+                            print(f"Failed to run XFOIL for airfoil {airfoil.airfoil.name}")
+                            num_failed += 1
+                            failed.append(airfoil.airfoil.name)
+                            bari()
+                            continue
 
-                # Score the airfoil
-                airfoil.score_result(weights=self.CLweights)
+                    # Find CLmax if required
+                    if self.maxCL:
+                        airfoil.nf_maxCL(reynolds=self.takeoff_reynolds)
+                        if airfoil.failed:
+                            print(f"Failed to find max CL for airfoil {airfoil.airfoil.name}")
+                            num_failed += 1
+                            failed.append(airfoil.airfoil.name)
+                            bari()
+                            continue
 
-                # Store results in DataFrame
-                self.results_df.loc[airfoil.airfoil.name] = {
-                    "Name": airfoil.airfoil.name,
-                    "Airfoil_Object": airfoil.airfoil,  # Storing asb.Airfoil object
-                    "CLs": airfoil.cls,
-                    "CDs": airfoil.cds,
-                    "CMs": airfoil.cms,
-                    "Xtr_Top": airfoil.xtr_top,
-                    "Xtr_Bot": airfoil.xtr_bot,
-                    "CLmax": airfoil.maxCL,
-                    "Score": airfoil.score,
-                    "Failure_Reason": "; ".join(airfoil.failure_reason) if airfoil.failure_reason else "None"
-                }
+                    # Score the airfoil
+                    airfoil.score_result(weights=self.CLweights)
 
-                print(f"Airfoil {airfoil.airfoil.name} analyzed successfully!")
-                bari()
-        self.results_df = self.results_df.sort_values(by="Score", ascending=False)
-        print(f"Failed to analyze {num_failed} airfoils out of {len(self.airfoil_files)} ({num_failed / len(self.airfoil_files) * 100:.2f}%)")
+                    # Store results in DataFrame
+                    self.results_df.loc[airfoil.airfoil.name] = {
+                        "Name": airfoil.airfoil.name,
+                        "Airfoil_Object": airfoil.airfoil,  # Storing asb.Airfoil object
+                        "CLs": airfoil.cls,
+                        "CDs": airfoil.cds,
+                        "CMs": airfoil.cms,
+                        "Xtr_Top": airfoil.xtr_top,
+                        "Xtr_Bot": airfoil.xtr_bot,
+                        "CLmax": airfoil.maxCL,
+                        "Score": airfoil.score,
+                        "Failure_Reason": "; ".join(airfoil.failure_reason) if airfoil.failure_reason else "None"
+                    }
+
+                    print(f"Airfoil {airfoil.airfoil.name} analyzed successfully!")
+                    bari()
+            self.results_df = self.results_df.sort_values(by="Score", ascending=False)
+            print(f"Failed to analyze {num_failed} airfoils out of {len(self.airfoil_files)} ({num_failed / len(self.airfoil_files) * 100:.2f}%)")
 
     def save_results(self, topN = 10, filename="airfoil_results.csv"):
         """ Saves the results DataFrame to a CSV file. """
@@ -306,9 +451,17 @@ class BatchAirfoil():
         if save:
             fig.savefig('top_airfoil_comparison.png')
 
-
-
 def compare(airfoils, reynolds, save=False):
+    """Draw a graph and compare airfoils using NeuralFoil.
+
+    Parameters:
+    airfoils: list
+        List of Airfoil objects to compare.
+    reynolds: float
+        Reynolds number to analyze.
+    save: bool, optional
+        If True, the plot is saved. Default is False.
+    """
     alphas = np.linspace(-10, 20, 30)
     fig, ax = plt.subplots(2, 2, figsize=(10, 10))
     ax[0, 0].set_title('CL vs CD')
@@ -363,17 +516,19 @@ if __name__ == "__main__":
     takeoff_reynolds = 1.225*10*0.5/(1.7894e-5)
     CL_selection = [0.1, 0.3] # CL values to analyze, can be a single value or a range
     Reynolds = [1239401] # Reynolds numbers to analyze, can also be a range.
-    # batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, takeoff_reynolds=takeoff_reynolds)
-    # batch.run_batch()
-    # batch.draw_analysis(save=True,topN=5)
-    # batch.save_results(topN=20, filename="top20_airfoil.csv")
-    # batch.save_results(topN=None, filename="full_airfoil.csv")
+    batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, takeoff_reynolds=takeoff_reynolds)
+    batch.run_batch()
+    batch.draw_analysis(save=True,topN=5)
+    batch.save_results(topN=20, filename="top20_airfoil.csv")
+    batch.save_results(topN=None, filename="full_airfoil.csv")
+
+    """After running the analyses, these were my top performers, 
+    and the first airfoil is what I am currently using.
+    I want to compare their performance using NeuralFoil, and take a look at their shape."""
 
     tentative_top = ['sd7032', 'hq2090sm', 'rg12a', 's2048']
-    batch = BatchAirfoil(tentative_top, CL_selection, reynolds=[1.23e6, 1.5e6], takeoff_reynolds=takeoff_reynolds)
-    batch.run_batch()
-    batch.draw_analysis(topN=5)
-    # airfoils = [asb.Airfoil(f) for f in tentative_top]
-    # compare(airfoils=airfoils, reynolds=1239401, save=False)
-    # airfoils[3].draw()
+    airfoils = [asb.Airfoil(f) for f in tentative_top]
+    compare(airfoils=airfoils, reynolds=1239401, save=False)
+    for af in airfoils:
+        af.draw()
 
