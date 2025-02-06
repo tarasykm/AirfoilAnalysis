@@ -40,12 +40,12 @@ The script allows batch processing of airfoils stored in `.dat` files:
 from airfoil_analysis import BatchAirfoil
 
 airfoil_database_path = "./coord_seligFmt"  # Path to airfoil files
-takeoff_reynolds = 1.225 * 10 * 0.5 / (1.7894e-5)  # Example Reynolds number
+maxCL_reynolds = 1.225 * 10 * 0.5 / (1.7894e-5)  # Example Reynolds number
 CL_selection = [0.1, 0.3]  # CL range for analysis
 Reynolds = [1239401]  # Reynolds numbers to analyze
 
 # Initialize batch airfoil analysis
-batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, takeoff_reynolds=takeoff_reynolds)
+batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, maxCL_reynolds=maxCL_reynolds)
 
 # Run analysis
 batch.run_batch()
