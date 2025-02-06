@@ -1,6 +1,8 @@
 # Airfoil Analysis with NeuralFoil and XFOIL
 
-This script provides tools for analyzing airfoils using **NeuralFoil** and **XFOIL**. It allows for the evaluation of multiple airfoils by calculating aerodynamic properties such as lift coefficient (CL), drag coefficient (CD), and moment coefficient (CM) at specified Reynolds numbers. The script can analyze a batch of airfoils, compute their maximum CL, and rank them based on a scoring function.
+This script primarily aids airfoil selection using **XFoil** or **NeuralFoil**. Write a custom objective function and sort through hundreds or thousands of airfoils to find the ones that score best. It allows for the evaluation of multiple airfoils by calculating aerodynamic properties such as lift coefficient (CL), drag coefficient (CD), moment coefficient (CM), Xtr, and even airfoil area (a good proxy for rib mass for RC models) at specified Reynolds numbers. The script can analyze a batch of airfoils, compute their maximum CL, and rank them based on a scoring function.
+
+Possible use case: Add the entire UIUC airfoil database, define your CL and Reynolds number, and find the airfoil that has the lowest drag while retaining good stall characteristics. 
 
 ## Features
 
