@@ -192,7 +192,7 @@ class AirfoilAnalysis(asb.Airfoil):
         self.score = float(score)
 
 class BatchAirfoil():
-    def __init__(self, airfoil_path, cls, reynolds, min_thick=0.0, nf=True, maxCL=True, CLweights=None, weight=True, takeoff_reynolds = 250000, min_confidece=0.9, alivebar=False):
+    def __init__(self, airfoil_path, cls, reynolds, min_thick=0.0, nf=True, maxCL=True, CLweights=None, weight=True, maxCL_Reynolds = 250000, min_confidece=0.9, alivebar=False):
         """Class to analyze a batch of airfoils using NeuralFoil or XFOIL.
 
         Parameters:
@@ -212,7 +212,7 @@ class BatchAirfoil():
             List of weights for each CL value. Used for scoring.
         weight: bool, optional
             If True, airfoil mass is considered in scoring. Default is True.
-        takeoff_reynolds: float, optional
+        maxCL_Reynolds: float, optional
             Reynolds number for takeoff. Default is 250000.
         min_confidence: float, optional
             Minimum confidence value for NeuralFoil analysis. Default is 0.9.
@@ -235,7 +235,7 @@ class BatchAirfoil():
         self.nf = nf
         self.maxCL = maxCL
         self.weight = weight
-        self.takeoff_reynolds = takeoff_reynolds
+        self.maxCL_Reynolds = maxCL_Reynolds
         self.min_confidence = min_confidece
         if CLweights is None:
             self.CLweights = [1]*len(cls)
@@ -297,7 +297,7 @@ class BatchAirfoil():
 
                     # Find CLmax if required
                     if self.maxCL:
-                        airfoil.nf_maxCL(reynolds=self.takeoff_reynolds)
+                        airfoil.nf_maxCL(reynolds=self.maxCL_Reynolds)
                         if airfoil.failed:
                             print(f"Failed to find max CL for airfoil {airfoil.airfoil.name}")
                             num_failed += 1
@@ -370,7 +370,7 @@ class BatchAirfoil():
 
                     # Find CLmax if required
                     if self.maxCL:
-                        airfoil.nf_maxCL(reynolds=self.takeoff_reynolds)
+                        airfoil.nf_maxCL(reynolds=self.maxCL_Reynolds)
                         if airfoil.failed:
                             print(f"Failed to find max CL for airfoil {airfoil.airfoil.name}")
                             num_failed += 1
@@ -513,10 +513,10 @@ if __name__ == "__main__":
 
     """Example Usage:"""
     airfoil_database_path = ".\\coord_seligFmt"
-    takeoff_reynolds = 1.225*10*0.5/(1.7894e-5)
+    maxCL_Reynolds = 1.225*10*0.5/(1.7894e-5)
     CL_selection = [0.1, 0.3] # CL values to analyze, can be a single value or a range
     Reynolds = [1239401] # Reynolds numbers to analyze, can also be a range.
-    batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, takeoff_reynolds=takeoff_reynolds)
+    batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, maxCL_Reynolds=maxCL_Reynolds)
     batch.run_batch()
     batch.draw_analysis(save=True,topN=5)
     batch.save_results(topN=20, filename="top20_airfoil.csv")
