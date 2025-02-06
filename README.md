@@ -20,6 +20,82 @@ To use this script, install the required dependencies by running:
 pip install -r requirements.txt
 ```
 
+## Adding the Repository to Your Python Library
+
+If you want to use this repository as a library in your Python projects, follow these steps:
+
+### Method 1: Clone and Use as a Local Module
+
+1. Clone the repository to your local machine:
+
+   ```sh
+   git clone https://github.com/yourusername/airfoil-analysis.git
+   ```
+
+2. Navigate into the cloned directory:
+
+   ```sh
+   cd airfoil-analysis
+   ```
+
+3. Install the package locally using `pip`:
+
+   ```sh
+   pip install .
+   ```
+
+4. Now you can import and use the library in your scripts:
+
+   ```python
+   from airfoil_analysis import BatchAirfoil, compare
+   ```
+
+### Method 2: Add the Repository to Your Python Path
+
+If you don’t want to install it but still want to use the scripts, you can add the directory to your Python path manually:
+
+1. Find the full path to the repository:
+
+   ```sh
+   pwd  # On Linux/macOS
+   cd && cd airfoil-analysis && cd .. && pwd  # Get full path
+   ```
+
+   or on Windows (PowerShell):
+
+   ```powershell
+   Get-Location
+   ```
+
+2. In your Python script, add the following:
+
+   ```python
+   import sys
+   sys.path.append("/path/to/airfoil-analysis")  # Replace with the actual path
+
+   from airfoil_analysis import BatchAirfoil, compare
+   ```
+
+### Method 3: Use as a Git Submodule
+
+If you are working in another project and want to include this as a submodule:
+
+1. Inside your project, run:
+
+   ```sh
+   git submodule add https://github.com/yourusername/airfoil-analysis.git external/airfoil-analysis
+   ```
+
+2. In your Python script, update the Python path:
+
+   ```python
+   import sys
+   sys.path.append("./external/airfoil-analysis")
+
+   from airfoil_analysis import BatchAirfoil, compare
+   ```
+
+
 ## Dependencies
 
 This script relies on the following Python libraries:
