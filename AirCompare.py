@@ -28,7 +28,7 @@ def weighted_average(data, weights):
         if data[i] is None:
             print('some data is None')
             continue
-        weighted += np.dot(data[i], weights)
+        weighted += np.dot(data[i], weights)[0]
     return weighted / sum(weights)
 
 class AirfoilAnalysis(asb.Airfoil):
@@ -48,7 +48,7 @@ class AirfoilAnalysis(asb.Airfoil):
     custom_weights: list, optional
         List of custom weights for scoring. Default is [20, 0, 3, 0.2, 5, 5].
     """
-    def __init__(self, airfoil, cls, reynolds, CLweights=None, mass=True, custom_weights=None):
+    def __init__(self, airfoil, cls, reynolds, CLweights=None, mass=True, custom_weights=None, **kwargs):
         self.airfoil = asb.Airfoil(airfoil)
         self.cls = cls
         self.reynolds = reynolds
@@ -69,6 +69,11 @@ class AirfoilAnalysis(asb.Airfoil):
             self.weights = custom_weights
         else:
             self.custom_weights = [20, 0, 3, 0.2, 5, 5]
+
+        self.Ncrit = 9
+        # kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def run_xfoil(self):
         raise NotImplementedError("XFOIL is not implemented in this version of the code. Please use NeuralFoil instead.")
@@ -101,7 +106,9 @@ class AirfoilAnalysis(asb.Airfoil):
             alpha = opti.variable(init_guess=2, scale=0.1, n_vars=len(self.cls))
             nf = self.airfoil.get_aero_from_neuralfoil(
                 alpha=alpha,
-                Re=re)
+                Re=re,
+                n_crit=self.Ncrit
+            )
             
             opti.subject_to(nf['CL'] == self.cls)
 
@@ -175,16 +182,21 @@ class AirfoilAnalysis(asb.Airfoil):
         if weights is None:
             weights = self.CLweights
         score = 0
-        for i in range(len(self.cls)):
-            cds = self.cds[i]
-            cd_weighted_avg = weighted_average(cds, weights)
-            score += (
-                w1*-cd_weighted_avg/0.00758194 + #normalized by sd7032 CD for simplicity
-                w2*np.mean(self.cms[i]) + 
-                w3*np.mean(self.xtr_top[i]) + 
-                w4*np.mean(self.xtr_bot[i]) +
-                0
-                )
+        cls = self.cls
+        for i in range(len(self.reynolds)):
+            cd = self.cds[i]
+            cms = self.cms[i]
+            xtr_top = self.xtr_top[i]
+            xtr_bot = self.xtr_bot[i]
+            for i in range(len(cls)):
+                cd_weighted_avg = weighted_average(cd, weights)
+                score += (
+                    w1*-cd_weighted_avg/0.00758194 + #normalized by sd7032 CD for simplicity
+                    w2*np.mean(cms) + 
+                    w3*np.mean(xtr_top) + 
+                    w4*np.mean(xtr_bot) +
+                    0
+                    )
         if self.maxCL is not None:
             score += w5*self.maxCL
         if self.mass:
@@ -192,7 +204,7 @@ class AirfoilAnalysis(asb.Airfoil):
         self.score = float(score)
 
 class BatchAirfoil():
-    def __init__(self, airfoil_path, cls, reynolds, min_thick=0.0, nf=True, maxCL=True, CLweights=None, weight=True, maxCL_Reynolds = 250000, min_confidece=0.9, alivebar=False):
+    def __init__(self, airfoil_path, cls, reynolds, min_thick=0.0, nf=True, maxCL=True, CLweights=None, weight=True, maxCL_Reynolds = 250000, min_confidece=0.9, alivebar=False, **kwargs):
         """Class to analyze a batch of airfoils using NeuralFoil or XFOIL.
 
         Parameters:
@@ -237,6 +249,8 @@ class BatchAirfoil():
         self.weight = weight
         self.maxCL_Reynolds = maxCL_Reynolds
         self.min_confidence = min_confidece
+        self.Ncrit = 9
+        self.alivebar = alivebar
         if CLweights is None:
             self.CLweights = [1]*len(cls)
 
@@ -244,6 +258,10 @@ class BatchAirfoil():
         self.results_df = pd.DataFrame(columns=[
             "Name", "CLs", "CDs", "CMs", "Xtr_Top", "Xtr_Bot", "CLmax", "Score", "Failure_Reason", "Airfoil_Object"
         ])
+
+        # kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def run_batch(self):
         """Run the batch analysis on the airfoils."""
@@ -256,7 +274,7 @@ class BatchAirfoil():
             with alive_bar(len(self.airfoil_files), title="Analyzing airfoils...", bar=custom) as bari:
                 for airfoil_file in self.airfoil_files:
                     try:
-                        airfoil = AirfoilAnalysis(airfoil_file, self.cls, self.reynolds)
+                        airfoil = AirfoilAnalysis(airfoil_file, self.cls, self.reynolds, Ncrit = self.Ncrit)
                     except Exception as e:
                         print(f"Failed to load airfoil {airfoil_file}: {e}")
                         num_failed += 1
@@ -512,23 +530,23 @@ if __name__ == "__main__":
     """
 
     """Example Usage:"""
-    airfoil_database_path = ".\\coord_seligFmt"
+    airfoil_database_path = "./coord_seligFmt"
     maxCL_Reynolds = 1.225*10*0.5/(1.7894e-5)
     CL_selection = [0.1, 0.3] # CL values to analyze, can be a single value or a range
-    Reynolds = [1239401] # Reynolds numbers to analyze, can also be a range.
-    batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, maxCL_Reynolds=maxCL_Reynolds)
+    Reynolds = [1239400] # Reynolds numbers to analyze, can also be a range.
+    batch = BatchAirfoil(airfoil_database_path, CL_selection, Reynolds, maxCL_Reynolds=maxCL_Reynolds, Ncrit=4, alivebar=True)
     batch.run_batch()
     batch.draw_analysis(save=True,topN=5)
     batch.save_results(topN=20, filename="top20_airfoil.csv")
-    batch.save_results(topN=None, filename="full_airfoil.csv")
+    # batch.save_results(topN=None, filename="full_airfoil.csv")
 
     """After running the analyses, these were my top performers, 
     and the first airfoil is what I am currently using.
     I want to compare their performance using NeuralFoil, and take a look at their shape."""
 
-    tentative_top = ['sd7032', 'hq2090sm', 'rg12a', 's2048']
-    airfoils = [asb.Airfoil(f) for f in tentative_top]
-    compare(airfoils=airfoils, reynolds=1239401, save=False)
-    for af in airfoils:
-        af.draw()
+    # tentative_top = ['sd7032', 'hq2090sm', 'rg12a', 's2048']
+    # airfoils = [asb.Airfoil(f) for f in tentative_top]
+    # compare(airfoils=airfoils, reynolds=1239401, save=False)
+    # for af in airfoils:
+    #     af.draw()
 
